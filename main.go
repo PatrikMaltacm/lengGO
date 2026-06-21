@@ -1,25 +1,48 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 )
 
-func main() {
-	fmt.Println("Digite seu código")
-	var code string
-	scanner := bufio.NewScanner(os.Stdin)
+type Token struct {
+	Type  string
+	Value string
+}
 
-	if scanner.Scan() {
-		code = scanner.Text()
+func main() {
+
+	if len(os.Args) < 2 {
+		fmt.Println("Arquivo não encontrado!")
+		return
 	}
 
-	command, tokens := Lexer(code)
+	fileName := os.Args[1]
 
-	success, message := Parser(command, tokens)
+	isValidExtension := strings.HasSuffix(fileName, ".lg")
+
+	if !isValidExtension {
+		fmt.Println("Extensão inválida para o arquivo!")
+		return
+	}
+
+	data, err := os.ReadFile(fileName)
+
+	if err != nil {
+		fmt.Println("Falha ao ler arquivo!")
+		return
+	}
+
+	var code string
+	code = string(data)
+
+	tokens := Lexer(code)
+
+	fmt.Println(tokens)
+
+	success, message := Parser(tokens)
 
 	if success {
 		fmt.Println(message)
@@ -28,35 +51,104 @@ func main() {
 	}
 }
 
-func Lexer(code string) (command string, values []string) {
-	tokens := strings.Split(code, " ")
+func Lexer(code string) []Token {
+	var tokens []Token
+	var currentWord string
+	inString := false
+	currentType := "IDENTIFIER"
 
-	return tokens[0], tokens[1:]
-}
-
-func Parser(command string, tokens []string) (success bool, message string) {
-	if command == "print" {
-		text := strings.Join(tokens, " ")
-		text = strings.ReplaceAll(text, `"`, "")
-
-		fmt.Println(text)
+	for _, characther := range code {
+		if characther == '\n' || characther == '\r' {
+			continue
+		}
+		if characther == '"' {
+			inString = !inString
+			currentType = "STRING"
+			continue
+		}
+		if characther >= '0' && characther <= '9' && !inString {
+			currentType = "NUMBER"
+		}
+		if characther == ';' {
+			if currentWord != "" {
+				newToken := Token{
+					Type:  currentType,
+					Value: currentWord,
+				}
+				tokens = append(tokens, newToken)
+			}
+			currentWord = ""
+			currentType = "END_STATEMENT"
+			newToken := Token{
+				Type:  currentType,
+				Value: currentWord,
+			}
+			tokens = append(tokens, newToken)
+			currentType = "IDENTIFIER"
+			continue
+		}
+		if characther == ' ' && !inString {
+			if currentWord != "" {
+				newToken := Token{
+					Type:  currentType,
+					Value: currentWord,
+				}
+				tokens = append(tokens, newToken)
+				currentType = "IDENTIFIER"
+				currentWord = ""
+			}
+		} else {
+			currentWord += string(characther)
+		}
 	}
 
-	if command == "sum" {
-		if len(tokens) >= 3 {
-			return false, "Não consigo somar mais que dois numeros"
-		} else if len(tokens) <= 1 {
-			return false, "não é possivel somar menos de um numero"
+	if currentWord != "" {
+		newToken := Token{
+			Type:  currentType,
+			Value: currentWord,
 		}
-		var sum int
-		for _, token := range tokens {
-			num, err := strconv.Atoi(token)
+		tokens = append(tokens, newToken)
+	}
 
-			if err == nil {
-				sum += num
+	fmt.Println(len(tokens))
+
+	return tokens
+}
+
+func Parser(tokens []Token) (success bool, message string) {
+	var currentStatement []Token
+
+	for _, token := range tokens {
+		if token.Type == "END_STATEMENT" {
+			// 1. O primeiro item da currentStatement é o comando (ex: "print" ou "sum")
+			// 2. Os itens do índice 1 em diante são os valores.
+			if currentStatement[0].Value == "print" {
+				for _, args := range currentStatement[1:] {
+					fmt.Println(args.Value)
+				}
 			}
+
+			if currentStatement[0].Value == "sum" {
+				if len(currentStatement[1:]) >= 3 {
+					return false, "Não consigo somar mais que dois numeros"
+				} else if len(currentStatement[1:]) <= 1 {
+					return false, "não é possivel somar menos de um numero"
+				}
+				var sum int
+				for _, args := range currentStatement[1:] {
+					num, err := strconv.Atoi(args.Value)
+
+					if err == nil {
+						sum += num
+					}
+				}
+				fmt.Println(currentStatement[1].Value, "+", currentStatement[2].Value, "=", sum)
+			}
+			// Depois de executar, limpa para o próximo comando:
+			currentStatement = []Token{}
+			continue
 		}
-		fmt.Println(tokens[0], "+", tokens[1], "=", sum)
+		currentStatement = append(currentStatement, token)
 	}
 
 	return true, "Sucesso na compilação"
